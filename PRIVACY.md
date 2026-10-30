@@ -1,6 +1,6 @@
 # Recallr Privacy Policy
 
-_Last updated: 16 October 2026_
+_Last updated: 30 October 2026_
 
 Recallr is made by Akhil, an individual developer in India ("I", "me"). It is built so that I never see your files or what you search for: Recallr runs entirely on your computer, with no account, no analytics and no tracking.
 
@@ -15,9 +15,11 @@ Questions? Write to [akhilms272@gmail.com](mailto:akhilms272@gmail.com).
 
 ## Your files and searches
 
-Recallr reads the folders you add so it can find files by their content. For each file it keeps a small preview image, text found in documents, and a compact description that lets it match what you type. All of this is stored in the storage folder you choose in Settings and is never sent anywhere.
+Recallr reads the folders you add so it can find files by their content. For each file it keeps a small preview image, text found in documents and screenshots, and a compact description that lets it match what you type. Text in screenshots and images is read by Windows' built-in text recognition on your computer. All of this is stored in the storage folder you choose in Settings and is never sent anywhere.
 
-Your searches are worked out on your computer and are not saved. Recallr only reads your files; it never changes, moves or deletes them.
+Your searches are worked out on your computer and are not saved. When you paste a picture to search with, Recallr keeps the last five in the storage folder so they can be searched with; they never leave your computer.
+
+Recallr never changes or moves your files. It only removes files you choose to remove in Duplicates, and those go to the Recycle Bin, where you can restore them.
 
 ## The search model
 
