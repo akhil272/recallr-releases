@@ -1,6 +1,6 @@
 # Recallr Privacy Policy
 
-_Last updated: 30 October 2026_
+_Last updated: 10 November 2026_
 
 Recallr is made by Akhil, an individual developer in India ("I", "me"). It is built so that I never see your files or what you search for: Recallr runs entirely on your computer, with no account, no analytics and no tracking.
 
@@ -10,7 +10,7 @@ Questions? Write to [akhilms272@gmail.com](mailto:akhilms272@gmail.com).
 
 - Your files, searches and search library stay on your computer and are never uploaded.
 - There are no accounts, ads, analytics, trackers, crash reports or usage statistics.
-- Recallr only goes online to download what it needs: the search model, video support if you turn it on, and app updates.
+- Recallr only goes online to download what it needs: the search model, video support and face models if you turn them on, and app updates.
 - I don't sell or share any data, because Recallr doesn't collect any.
 
 ## Your files and searches
@@ -25,10 +25,15 @@ Recallr never changes or moves your files. It only removes files you choose to r
 
 Recallr uses EmbeddingGemma, an open model made by Google, to understand photos, documents and videos. It is downloaded once and then runs entirely on your computer. Google doesn't receive your files, your searches or anything about how you use Recallr.
 
+## People and faces
+
+People is off until you turn it on. When it's on, Recallr finds faces in your photos on your computer and keeps a small picture of each face and a compact description used to tell people apart. Face data is stored only in your storage folder, is never sent anywhere, and can be removed at any time in Settings → People. Turning People off stops new photos from being scanned.
+
 ## When Recallr goes online
 
 - **Search model:** downloaded from Hugging Face (huggingface.co) when you choose Download.
 - **Video support:** downloaded from GitHub (github.com), only if you turn it on.
+- **Face models:** downloaded from GitHub and Hugging Face, only after you turn on People and choose Download.
 - **Updates:** Recallr checks GitHub for a new version when it starts or when you choose Check for updates, and installs one only when you agree. If you installed Recallr from the Microsoft Store, the Store installs updates instead.
 
 Like any website you visit, these services see your IP address and basic request details such as the app version, under their own policies: [Hugging Face](https://huggingface.co/privacy) and [GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement). Nothing about your files or searches is included. Once the downloads are done, Recallr works fully offline.
