@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     env:
       SOURCE_REF: ${{ github.event.client_payload.sha || inputs.ref || 'main' }}
