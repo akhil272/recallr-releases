@@ -1,0 +1,156 @@
+# Builds Recallr for Macs with Apple silicon and publishes the DMG here.
+#
+# Started by akhil272/recallr when main changes (repository_dispatch "recallr-main" with the
+# commit), or by hand from the Actions tab. The source repo is private, so it's checked out
+# with SOURCE_TOKEN. A release is only published when v<version> doesn't exist yet, so bump
+# the version to ship a new one.
+#
+# Secrets: SOURCE_TOKEN (read access to akhil272/recallr contents),
+# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (updater signing key).
+name: macOS release
+
+on:
+  repository_dispatch:
+    types: [recallr-main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch or tag of akhil272/recallr to build
+        default: main
+      publish:
+        description: Publish a release (off builds the DMG as a workflow artifact only)
+        type: boolean
+        default: false
+      notes:
+        description: Release notes (shown in the app's update prompt)
+        default: ""
+
+concurrency:
+  group: macos-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      SOURCE_REF: ${{ github.event.client_payload.sha || inputs.ref || 'main' }}
+      PUBLISH: ${{ github.event_name == 'repository_dispatch' || inputs.publish }}
+      NOTES: ${{ inputs.notes }}
+      TARGET: aarch64-apple-darwin
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out Recallr
+        uses: actions/checkout@v5
+        with:
+          repository: akhil272/recallr
+          ref: ${{ env.SOURCE_REF }}
+          token: ${{ secrets.SOURCE_TOKEN }}
+          persist-credentials: false
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "v$version is already released."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip (version already released)
+        if: env.PUBLISH == 'true' && steps.version.outputs.exists == 'true'
+        run: echo "::notice::v${{ steps.version.outputs.version }} already exists; bump the version to publish a new macOS release."
+
+      - name: Set up pnpm
+        if: env.PUBLISH != 'true' || steps.version.outputs.exists != 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        if: env.PUBLISH != 'true' || steps.version.outputs.exists != 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Set up Rust
+        if: env.PUBLISH != 'true' || steps.version.outputs.exists != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - name: Cache Rust build
+        if: env.PUBLISH != 'true' || steps.version.outputs.exists != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ env.TARGET }}
+
+      - name: Install packages
+        if: env.PUBLISH != 'true' || steps.version.outputs.exists != 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        if: env.PUBLISH != 'true' || steps.version.outputs.exists != 'true'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --target "$TARGET"
+
+      - name: Collect files
+        if: env.PUBLISH != 'true' || steps.version.outputs.exists != 'true'
+        id: files
+        run: |
+          version=${{ steps.version.outputs.version }}
+          bundle="src-tauri/target/$TARGET/release/bundle"
+          mkdir -p dist
+          cp "$bundle/dmg/Recallr_${version}_aarch64.dmg" dist/
+          cp "$bundle/macos/Recallr.app.tar.gz" "dist/Recallr_${version}_aarch64.app.tar.gz"
+          cp "$bundle/macos/Recallr.app.tar.gz.sig" "dist/Recallr_${version}_aarch64.app.tar.gz.sig"
+          ls -lh dist
+
+      - name: Upload build
+        if: env.PUBLISH != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Recallr-macos-aarch64
+          path: dist/*.dmg
+          retention-days: 14
+
+      - name: Publish release
+        if: env.PUBLISH == 'true' && steps.version.outputs.exists != 'true'
+        run: |
+          version=${{ steps.version.outputs.version }}
+          tag="v$version"
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag"
+          node -e '
+            const fs = require("fs")
+            const [version, notes, url, sigPath] = process.argv.slice(1)
+            const manifest = {
+              version,
+              notes,
+              pub_date: new Date().toISOString(),
+              platforms: { "darwin-aarch64": { signature: fs.readFileSync(sigPath, "utf8").trim(), url } },
+            }
+            fs.writeFileSync("dist/latest.json", JSON.stringify(manifest, null, 2))
+          ' "$version" "${NOTES:-Recallr $version}" "$base/Recallr_${version}_aarch64.app.tar.gz" "dist/Recallr_${version}_aarch64.app.tar.gz.sig"
+          cat > notes.md <<EOF
+          ${NOTES:-Recallr $version for Macs with Apple silicon (M1 or later), macOS 14 Sonoma or later.}
+
+          **Install on a Mac:** download \`Recallr_${version}_aarch64.dmg\`, open it and drag Recallr to Applications.
+          Recallr isn't notarized by Apple yet, so the first time you open it macOS says it can't check the app:
+          open **System Settings → Privacy & Security**, click **Open Anyway** next to Recallr, and confirm.
+
+          Windows: get Recallr from the Microsoft Store.
+          EOF
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "Recallr $version" --notes-file notes.md --latest \
+            "dist/Recallr_${version}_aarch64.dmg" \
+            "dist/Recallr_${version}_aarch64.app.tar.gz" \
+            "dist/Recallr_${version}_aarch64.app.tar.gz.sig" \
+            dist/latest.json
