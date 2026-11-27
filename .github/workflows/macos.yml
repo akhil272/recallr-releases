@@ -5,8 +5,14 @@
 # with SOURCE_TOKEN. A release is only published when v<version> doesn't exist yet, so bump
 # the version to ship a new one.
 #
+# Every published release (and a manual run with "r2" on) also uploads the DMG to Cloudflare R2:
+#   https://downloads.builtbyakhil.com/recallr/latest/Recallr-macOS-AppleSilicon.dmg   (always newest)
+#   https://downloads.builtbyakhil.com/recallr/<version>/Recallr-macOS-AppleSilicon.dmg
+#   https://downloads.builtbyakhil.com/recallr/latest.json                              (version, size, sha256)
+#
 # Secrets: SOURCE_TOKEN (read access to akhil272/recallr contents),
-# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (updater signing key).
+# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (updater signing key),
+# R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY (R2 token with write access to the bucket).
 name: macOS release
 
 on:
@@ -24,6 +30,10 @@ on:
       notes:
         description: Release notes (shown in the app's update prompt)
         default: ""
+      r2:
+        description: Upload the DMG to R2 (downloads.builtbyakhil.com), even without publishing a release
+        type: boolean
+        default: false
 
 concurrency:
   group: macos-release
@@ -40,6 +50,11 @@ jobs:
       SOURCE_REF: ${{ github.event.client_payload.sha || inputs.ref || 'main' }}
       PUBLISH: ${{ github.event_name == 'repository_dispatch' || inputs.publish }}
       NOTES: ${{ inputs.notes }}
+      R2: ${{ github.event_name == 'repository_dispatch' || inputs.publish || inputs.r2 }}
+      R2_BUCKET: downloads
+      R2_PUBLIC_URL: https://downloads.builtbyakhil.com
+      R2_PREFIX: recallr
+      R2_FILE: Recallr-macOS-AppleSilicon.dmg
       TARGET: aarch64-apple-darwin
       MACOSX_DEPLOYMENT_TARGET: "14.0"
       GH_TOKEN: ${{ github.token }}
@@ -154,3 +169,47 @@ jobs:
             "dist/Recallr_${version}_aarch64.app.tar.gz" \
             "dist/Recallr_${version}_aarch64.app.tar.gz.sig" \
             dist/latest.json
+
+      - name: Upload to R2
+        if: env.R2 == 'true' && (env.PUBLISH != 'true' || steps.version.outputs.exists != 'true')
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+        run: |
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$RCLONE_CONFIG_R2_ACCESS_KEY_ID" ] || [ -z "$RCLONE_CONFIG_R2_SECRET_ACCESS_KEY" ]; then
+            echo "::error::Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY in this repo's Actions secrets."
+            exit 1
+          fi
+          export RCLONE_CONFIG_R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          brew install rclone > /dev/null
+          version=${{ steps.version.outputs.version }}
+          dmg="dist/Recallr_${version}_aarch64.dmg"
+          # Each version stays available; latest always holds the newest.
+          rclone copyto "$dmg" "r2:$R2_BUCKET/$R2_PREFIX/$version/$R2_FILE" --header-upload "Cache-Control: public, max-age=31536000, immutable"
+          rclone copyto "$dmg" "r2:$R2_BUCKET/$R2_PREFIX/latest/$R2_FILE" --header-upload "Cache-Control: public, max-age=300"
+          node -e '
+            const fs = require("fs")
+            const crypto = require("crypto")
+            const [version, dmg, base, prefix, file, source] = process.argv.slice(1)
+            const manifest = {
+              name: "Recallr",
+              version,
+              date: new Date().toISOString(),
+              source,
+              downloads: [{
+                platform: "macArm",
+                label: "macOS, Apple silicon (M series)",
+                url: `${base}/${prefix}/latest/${file}`,
+                versionUrl: `${base}/${prefix}/${version}/${file}`,
+                bytes: fs.statSync(dmg).size,
+                sha256: crypto.createHash("sha256").update(fs.readFileSync(dmg)).digest("hex"),
+              }],
+            }
+            fs.writeFileSync("dist/r2-latest.json", JSON.stringify(manifest, null, 2))
+          ' "$version" "$dmg" "$R2_PUBLIC_URL" "$R2_PREFIX" "$R2_FILE" "https://github.com/$GITHUB_REPOSITORY/releases/tag/v$version"
+          rclone copyto dist/r2-latest.json "r2:$R2_BUCKET/$R2_PREFIX/latest.json" --header-upload "Cache-Control: public, max-age=300"
+          echo "::notice::Download: $R2_PUBLIC_URL/$R2_PREFIX/latest/$R2_FILE"
